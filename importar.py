@@ -33,6 +33,9 @@ RETENCION_MINIMA = 10
 RETENCION_BAJA_SEGUIDA = 15
 CAIDA_MINIMA = 0.40
 DIAS_MINIMOS_MES_EN_CURSO = 3
+DIA_LIMITE_MES_ANTERIOR = 10   # un recurrente pagado hasta este día puede corresponder al mes anterior
+DIA_LIMITE_NOMINA = 7          # la nómina pagada hasta este día es de la quincena del mes anterior
+MESES_PARA_INACTIVO = 3        # sin pagos en este tiempo, un recurrente deja de esperarse
 ITERACIONES_CLAVE = 600_000
 
 # Palabras de cada categoría. Gana la primera que coincida, por eso el orden importa.
@@ -40,7 +43,7 @@ CATEGORIAS = [
     ("Reposición de base", ["base"]),
     ("Vales y préstamos", ["vale", "prestamo", "preatamo", "adelanto"]),
     ("Nómina", ["nomin", "nomia", "nimina", "nomona", "prima ", "vacacion", "cesantia", "liquidacion", "turno",
-                "turmo", "ayudante", "seguridad social", "pago mes", "liqud", "examenes"]),
+                "turmo", "ayudante", "seguridad social", "liqud", "examenes"]),
     ("Arriendo", ["arrend", "arriend", "arremd", "pago local"]),
     ("Gaseosas", ["gaseosa", "postobon", "coca"]),
     ("Licor y cigarrillos", ["licor", "licar", " ron ", "aguardiente", "whisky", "vino", "cigarr", "cerveza", "tequila"]),
@@ -50,7 +53,7 @@ CATEGORIAS = [
                          "regalo", "cantante", "asado", "ecoracion", "ensalada", "arepa"]),
     ("Vigilancia", ["vigilancia", "vijilancia"]),
     ("Servicios e internet", ["tigo", "epm", "velonet", "internet", "recarga", "cargas ", "conexion", "coneccion",
-                              "consignacion", "zona limpia", "enlinea", "en linea"]),
+                              "consignacion", "zona limpia", "enlinea", "en linea", "pago mes"]),
     ("Reparaciones", ["reparacion", "arreglo", "tarjeta", "repuesto", "tecnico", "cpu", "billetero", "llave",
                       "ferreteria", "mantenimiento", "bombillo", "cargador", "pintura", "electric", "plomer", "soldadura", "fuente", "fuemte", "monitor",
                       "targeta", "ventilador", "cable", "botoneria", "ensayo", "chapa", "extencion", "revision", "regrabado",
@@ -392,10 +395,117 @@ def analizar_mes(mes, kmapa, nombre, previo):
     return dict(anio=anio, mes=nmes, archivo=mes["archivo"], modificado=mes["modificado"], dias=dias_out,
                 gastos=gastos_out, maquinas=maquinas, alertas=alertas,
                 resumen=dict(entradas=sum(d["entradas"] for d in dias_out), salidas=sum(d["salidas"] for d in dias_out),
-                             resultado=tot_res, gastos=tot_gas - pagos_base, base=pagos_base, efectivo=tot_efe,
+                             resultado=tot_res, gastos=tot_gas - pagos_base, base=pagos_base, pagos_caja=tot_gas, efectivo=tot_efe,
                              esperado=esperado, diferencia=brecha, sin_contar=sum(x[2] - x[3] for x in saltos),
                              utilidad_bruta=tot_res, utilidad_real=tot_res - (tot_gas - pagos_base), dias=len(dias_out),
                              dias_mes=calendar.monthrange(anio, nmes)[1]))
+
+
+def item_recurrente(g):
+    """Nombre del gasto recurrente al que pertenece un pago. Las reglas no llevan nombres de personas."""
+    n, cat, dia = " " + norm(g["concepto"]) + " ", g["categoria"], int(g["fecha"][8:])
+    if cat == "Arriendo":
+        return "Arriendo bodega" if "bodega" in n or " apt" in n or (g["valor"] <= 1_000_000 and dia >= 20) else "Arriendo local"
+    if cat == "Vigilancia":
+        return "Vigilancia"
+    if cat == "Gaseosas":
+        return "Gaseosas"
+    if cat == "Nómina":
+        return "Nómina"
+    if "honorario" in n or "asesoria" in n:
+        return "Honorarios"
+    if "tigo" in n:
+        return "Tigo"
+    if "velonet" in n:
+        return "Velonet"
+    if any(x in n for x in ("recarga", "cargas ", "conexion", "coneccion", "consignacion", "pago mes")):
+        return "Conexión y recargas"
+    return None
+
+
+# El arriendo local se paga hacia el día 10 de forma regular: se deja en el mes de pago hasta confirmar a qué mes corresponde.
+SIN_TRASLADO = {"Arriendo local", "Nómina"}
+ORDEN_RECURRENTES = ["Nómina", "Arriendo local", "Arriendo bodega", "Vigilancia", "Honorarios", "Conexión y recargas", "Velonet", "Tigo", "Gaseosas"]
+
+
+def es_quincena(g):
+    n = norm(g["concepto"])
+    return any(x in n for x in ("nomin", "nomia", "nimina", "nomona", "liqud")) and "vacacion" not in n
+
+
+def asignar_gastos(meses):
+    """Pasa al mes anterior los pagos que le corresponden. La caja sigue en la fecha real del pago."""
+    claves = sorted(meses)
+    posicion = {k: i for i, k in enumerate(claves)}
+
+    def mover(g, origen, destino):
+        meses[origen]["gastos"].remove(g)
+        g["pagado_en"] = origen
+        meses[destino]["gastos"].append(g)
+
+    for m in meses.values():
+        for g in m["gastos"]:
+            item = item_recurrente(g)
+            if item:
+                g["item"] = item
+
+    # Nómina de los primeros días: quincena del mes anterior
+    for k in claves[1:]:
+        for g in list(meses[k]["gastos"]):
+            if g.get("item") == "Nómina" and int(g["fecha"][8:]) <= DIA_LIMITE_NOMINA and es_quincena(g):
+                mover(g, k, claves[posicion[k] - 1])
+
+    # Recurrentes: si al mes le falta el pago, lo toma de los primeros días del mes siguiente
+    for item in ORDEN_RECURRENTES:
+        if item in SIN_TRASLADO:
+            continue
+        for i, k in enumerate(claves[:-1]):
+            ya_empezo = any(g.get("item") == item for c in claves[:i] for g in meses[c]["gastos"])
+            if not ya_empezo or any(g.get("item") == item for g in meses[k]["gastos"]):
+                continue
+            siguiente = claves[i + 1]
+            temprano = sorted((g for g in meses[siguiente]["gastos"] if g.get("item") == item and "pagado_en" not in g
+                               and int(g["fecha"][8:]) <= DIA_LIMITE_MES_ANTERIOR), key=lambda g: g["fecha"])
+            if temprano:
+                mover(temprano[0], siguiente, k)
+
+    # Totales del mes, ya con los gastos en su mes
+    for k in claves:
+        m = meses[k]
+        m["gastos"].sort(key=lambda g: g["fecha"])
+        entran = sum(g["valor"] for g in m["gastos"] if g.get("pagado_en") and g["categoria"] not in NO_GASTO)
+        salen = sum(g["valor"] for c in claves if c != k for g in meses[c]["gastos"] if g.get("pagado_en") == k and g["categoria"] not in NO_GASTO)
+        r = m["resumen"]
+        r["gastos"] += entran - salen
+        r["utilidad_real"] = r["utilidad_bruta"] - r["gastos"]
+        r["gastos_de_otro_mes"] = entran
+        r["gastos_a_otro_mes"] = salen
+
+    # Tabla ordenada de recurrentes
+    tabla = []
+    for item in ORDEN_RECURRENTES:
+        celdas = {}
+        con_pago = [k for k in claves if any(g.get("item") == item for g in meses[k]["gastos"])]
+        for i, k in enumerate(claves):
+            pagos = [g for g in meses[k]["gastos"] if g.get("item") == item]
+            completo = meses[k]["dias"] and meses[k]["dias"][-1]["dia"] == meses[k]["resumen"]["dias_mes"]
+            if pagos:
+                estado = "traido" if all(g.get("pagado_en") for g in pagos) else "pagado"
+            elif not con_pago or k < con_pago[0]:
+                estado = "antes"
+            elif not completo:
+                estado = "pendiente"
+            elif k > con_pago[-1] and sum(1 for c in claves[posicion[con_pago[-1]] + 1:]
+                                          if meses[c]["dias"][-1]["dia"] == meses[c]["resumen"]["dias_mes"]) > MESES_PARA_INACTIVO:
+                estado = "inactivo"
+            elif k > con_pago[-1] and con_pago[-1] < claves[-1] and i == len(claves) - 2:
+                estado = "pendiente"  # se puede pagar en los primeros días del mes en curso
+            else:
+                estado = "falta"
+            traidos = [g for g in pagos if g.get("pagado_en")]
+            celdas[k] = dict(estado=estado, valor=sum(g["valor"] for g in pagos), traido=sum(g["valor"] for g in traidos))
+        tabla.append(dict(item=item, celdas=celdas))
+    return tabla
 
 
 def vigilancia(meses, nombre):
@@ -491,6 +601,7 @@ def main():
             errores.append(dict(archivo=a["nombre"], motivo=str(e)[:200]))
 
     meses, nombres = construir(leidos)
+    recurrentes = asignar_gastos(meses)
     vigilancia(meses, nombres)
     # El registro de GitHub Actions es público: el detalle con cifras solo se imprime en el equipo local.
     for clave, m in ({} if os.environ.get("GITHUB_ACTIONS") else meses).items():
@@ -500,7 +611,7 @@ def main():
         print("ERROR", e)
 
     datos = dict(generado=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), negocio="El Tesoro",
-                 meses=meses, nombres=nombres, errores=errores)
+                 meses=meses, nombres=nombres, recurrentes=recurrentes, errores=errores)
     texto = json.dumps(datos, ensure_ascii=False, separators=(",", ":"))
     docs = BASE / "docs"
     docs.mkdir(exist_ok=True)
