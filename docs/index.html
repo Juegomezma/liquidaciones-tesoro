@@ -94,6 +94,19 @@ button.fila:hover .n{text-decoration:underline;text-underline-offset:3px}
 .pista .bar.dn{background:var(--contra);border-radius:4px 0 0 4px}
 .fila small{color:var(--tinta2);font-size:12.5px}
 .detalle{padding:10px 0 16px;border-top:1px dashed var(--linea)}
+.filtros{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.filtros select{max-width:100%}
+.frente .pista{height:10px}
+.frente .bar.up{background:var(--dato)}
+.calor td{text-align:center;min-width:46px;padding:6px 5px;border-bottom:2px solid var(--papel);border-right:2px solid var(--papel);font-size:13px}
+.calor td:first-child{text-align:left;padding-right:12px;min-width:130px;font-size:14px}
+.calor th{text-align:center;padding-inline:4px}
+.calor th:first-child{text-align:left}
+.calor tr[data-maq]{cursor:pointer}
+.calor tr[data-maq]:hover td:first-child{text-decoration:underline;text-underline-offset:3px}
+.c-3{background:#6fa8dc}.c-2{background:#a9cdee}.c-1{background:#dbe9f6}.c0{background:#f0f2f4}
+.c1{background:#fbe3d8}.c2{background:#f5bfa6}.c3{background:#ec9a76}
+.volver{background:none;border:0;padding:0;color:var(--dato);font-weight:600;cursor:pointer}
 .dos{display:grid;gap:30px;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))}
 .segm{display:inline-flex;background:var(--tenue);border-radius:9px;padding:3px;gap:2px}
 .segm button{background:none;border:0;padding:5px 12px;border-radius:7px;cursor:pointer;color:var(--tinta2);font-weight:500;font-size:14px}
@@ -209,7 +222,7 @@ function iniciar(D){
 var claves=Object.keys(D.meses).sort();
 var ult=claves[claves.length-1];
 var anios=[];claves.forEach(function(k){var a=+k.slice(0,4);if(anios.indexOf(a)<0)anios.push(a)});
-var S={tab:"hoy",mes:ult,anio:+ult.slice(0,4),periodo:"mes",abierta:null,cat:null};
+var S={tab:"hoy",mes:ult,anio:+ult.slice(0,4),periodo:"mes",metrica:"venta",abierta:null,cat:null};
 var h0=location.hash.slice(1);if(TABS.some(function(t){return t[0]===h0}))S.tab=h0;
 function NOM(id){return D.nombres[id]||"Sin nombre"}
 function delAnio(a){return claves.filter(function(k){return +k.slice(0,4)===a})}
@@ -230,8 +243,9 @@ function cambio(a,b,txt){
 }
 function aviso(a){return '<div class="aviso">'+(a.nivel==="revisar"?ICO.rev:ICO.info)+'<div><b>'+esc(a.titulo)+'</b><p>'+esc(a.detalle)+'</p></div></div>'}
 
-function columnas(items){
-  var vals=items.map(function(i){return i.valor||0}),hi=Math.max(0,Math.max.apply(null,vals)),lo=Math.min(0,Math.min.apply(null,vals));
+function columnas(items,op){
+  op=op||{};
+  var vals=items.map(function(i){return i.valor||0}).concat(items.map(function(i){return i.fondo||0})),hi=Math.max(0,Math.max.apply(null,vals)),lo=Math.min(0,Math.min.apply(null,vals));
   var r=(hi-lo)||1,p0=r/4,mag=Math.pow(10,Math.floor(Math.log10(p0))),n=p0/mag,paso=(n<=1?1:n<=2?2:n<=5?5:10)*mag;
   var top=Math.ceil(hi/paso)*paso,bot=Math.floor(lo/paso)*paso,tot=(top-bot)||1;
   function y(v){return (top-v)/tot*100}
@@ -240,11 +254,12 @@ function columnas(items){
   var b=items.map(function(i){
     if(i.valor==null)return '<div class="band" style="cursor:default"></div>';
     var z=y(0),h=Math.abs(i.valor)/tot*100,st=i.valor>=0?'top:'+(z-h)+'%;height:'+h+'%':'top:'+z+'%;height:'+h+'%';
-    return '<button type="button" class="band" data-tip="'+esc(i.tip)+'" aria-label="'+esc(i.etiqueta+": "+cop(i.valor))+'"'+(i.ir?' data-ir="'+i.ir+'"':'')+'><span class="col '+(i.valor>=0?"up":"dn")+'" style="'+st+'"></span></button>';
+    var fh=i.fondo!=null?Math.abs(i.fondo)/tot*100:0,fs=i.fondo!=null?'<span class="col up" style="background:var(--gris-serie);width:min(calc(100% - 2px),30px);max-width:none;top:'+(z-fh)+'%;height:'+fh+'%"></span>':'';
+    return '<button type="button" class="band" data-tip="'+esc(i.tip)+'" aria-label="'+esc(i.etiqueta+": "+cop(i.valor))+'"'+(i.ir?' data-ir="'+i.ir+'"':'')+'>'+fs+'<span class="col '+(i.valor>=0?"up":"dn")+'" style="'+st+(i.fondo!=null?';max-width:16px;width:calc(55% - 2px)':'')+'"></span></button>';
   }).join("");
   var haNeg=vals.some(function(v){return v<0});
   return '<div class="chart"><div class="yaxis">'+ya+'</div><div class="plot">'+g+b+'</div><div class="xaxis">'+items.map(function(i){return '<span>'+esc(i.eje||"")+'</span>'}).join("")+'</div></div>'+
-    (haNeg?'<div class="clave"><span><i style="background:var(--dato)"></i>Ganancia</span><span><i style="background:var(--contra)"></i>Pérdida</span></div>':'');
+    (op.clave||(haNeg?'<div class="clave"><span><i style="background:var(--dato)"></i>Ganancia</span><span><i style="background:var(--contra)"></i>Pérdida</span></div>':''));
 }
 
 // Acumulado del mes contra el mes anterior
@@ -281,20 +296,21 @@ function vHoy(){
   if(atraso>2)h+='<div class="estado" style="margin-bottom:12px">'+ICO.rev+'<div><b>Faltan días por digitar</b><span>La última hoja del Excel tiene '+atraso+' días de atraso.</span></div></div>';
   var dif=d.efectivo?d.efectivo-d.esperado:null;
   h+='<div class="lectura"><div><span class="etq">Se vendió (entradas de las máquinas)</span>'+contador(d.entradas)+(compa?cambio(d.entradas,compa.entradas,"frente al "+SEM[semana.getDay()]+" anterior"):"")+'</div><div class="cifras">'+
-    cifra("Salió en premios",cop(d.salidas),"Salidas registradas")+cifra("Quedó en máquinas",cop(d.resultado),"Entradas menos salidas",sn(d.resultado))+
+    cifra("Salió en premios",cop(d.salidas),"Salidas registradas")+cifra("Utilidad bruta",cop(d.resultado),"Entradas menos salidas",sn(d.resultado))+
     cifra("Gastos del día",cop(d.gastos))+cifra("Efectivo contado",d.efectivo?cop(d.efectivo):"Sin conteo",dif===null?"":Math.abs(dif)<1?"Cuadra exacto":(dif>0?"Sobran ":"Faltan ")+cop(Math.abs(dif)))+'</div></div></section>';
   // Mes
   var corte=d.dia,comp=p?hasta(p,corte,"resultado"):null,faltan=r.dias_mes-corte,proy=r.resultado/Math.max(r.dias,1)*r.dias_mes;
   h+='<section><div class="tit"><h2>Cómo va '+MESES[m.mes-1].toLowerCase()+'</h2><span>'+r.dias+' de '+r.dias_mes+' días</span></div><div class="fila-cifras">'+
-    cifra("Vendido",cop(r.entradas))+cifra("Quedó en máquinas",cop(r.resultado),comp?"Al día "+corte+" de "+MESES[p.mes-1].toLowerCase()+": "+cop(comp):"")+
-    cifra("Gastos",cop(r.gastos))+cifra("Utilidad a hoy",cop(r.utilidad),"Máquinas menos gastos",sn(r.utilidad))+
-    (faltan>0?cifra("Si sigue igual, cierra en",cop(proy),"Resultado de máquinas, estimado"):"")+'</div><div style="margin-top:16px">'+lineaMes(m,p)+'</div></section>';
+    cifra("Vendido",cop(r.entradas))+cifra("Utilidad bruta",cop(r.utilidad_bruta),comp?"Al día "+corte+" de "+MESES[p.mes-1].toLowerCase()+": "+cop(comp):"")+
+    cifra("Gastos",cop(r.gastos))+cifra("Utilidad real",cop(r.utilidad_real),"Bruta menos gastos del mes",sn(r.utilidad_real))+
+    (faltan>0?cifra("Si sigue igual, la bruta cierra en",cop(proy),"Estimado con el promedio del mes"):"")+'</div><div style="margin-top:16px">'+lineaMes(m,p)+'</div></section>';
   // Máquinas del día
   var del=m.maquinas.map(function(x){var y=x.dias.filter(function(z){return z[0]===d.dia})[0];return {id:x.id,e:y?y[1]:0,s:y?y[2]:0,r:y?y[3]:0}}).sort(function(a,b){return b.r-a.r});
-  function mini(l){return l.map(function(x){return '<div class="fila"><div class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(x.r)+'">'+cop(x.r)+'</span></div></div>'}).join("")}
+  function mini(l){return l.map(function(x){return '<button type="button" class="fila" data-ver-maq="'+esc(x.id)+'"><div class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(x.r)+'">'+cop(x.r)+'</span></div></button>'}).join("")}
   h+='<section class="dos"><div><div class="tit"><h2>Las que más dejaron</h2><span>Último día</span></div><div class="rank">'+mini(del.slice(0,4))+'</div></div><div><div class="tit"><h2>Las que menos dejaron</h2><span>Último día</span></div><div class="rank">'+mini(del.slice(-4).reverse())+'</div></div></section>';
   var gs=m.gastos.filter(function(g){return +g.fecha.slice(8)===d.dia});
   if(gs.length)h+='<section><div class="tit"><h2>Gastos del día</h2><span>'+cop(gs.reduce(function(a,g){return a+g.valor},0))+'</span></div><div class="tabla"><table><tbody>'+gs.map(function(g){return '<tr><td class="iz">'+esc(g.concepto)+'</td><td class="iz" style="color:var(--tinta2)">'+esc(g.categoria)+'</td><td>'+cop(g.valor)+'</td></tr>'}).join("")+'</tbody></table></div></section>';
+  h+=secVigilar(m,4);
   var rev=m.alertas.filter(function(a){return a.nivel==="revisar"});
   if(rev.length)h+='<section><button type="button" class="estado" data-ir-tab="mes">'+ICO.rev+'<div><b>'+rev.length+(rev.length===1?" punto por revisar":" puntos por revisar")+' en '+MESES[m.mes-1].toLowerCase()+'</b><span>'+esc(rev[0].titulo)+'. Toca para ver el detalle.</span></div></button></section>';
   return h;
@@ -307,51 +323,93 @@ function vMes(){
   var rev=m.alertas.filter(function(a){return a.nivel==="revisar"}),inf=m.alertas.filter(function(a){return a.nivel!=="revisar"});
   function fila(n,v,c){return '<div class="'+(c||"")+'"><span>'+esc(n)+'</span><span class="v '+sn(v)+'">'+cop(v)+'</span></div>'}
   var h='<section class="dos"><div><div class="tit"><h2>Liquidación de '+esc(nom.toLowerCase())+'</h2><span>'+(compl?"Mes completo":"En curso, "+r.dias+" días")+'</span></div><div class="liq">'+
-    fila("Entradas de las máquinas",r.entradas)+fila("Salidas registradas",-r.salidas)+fila("Quedó en máquinas",r.resultado,"fuerte")+fila("Gastos pagados en el local",-r.gastos)+fila("Utilidad antes de otros descuentos",r.utilidad,"fuerte")+
-    '</div><p class="nota" style="margin-top:8px">Los Excel de '+m.anio+' no traen hoja de cierre, así que aquí no están WMS, cerveza, la participación de socios ni los gastos pagados por fuera de la caja.</p></div>';
+    fila("Entradas de las máquinas",r.entradas)+fila("Salidas registradas",-r.salidas)+fila("Utilidad bruta",r.utilidad_bruta,"fuerte")+fila("Gastos del mes",-r.gastos)+fila("Utilidad real",r.utilidad_real,"fuerte")+
+    '</div><p class="nota" style="margin-top:8px">Los gastos son los anotados en las hojas diarias, sin reponer base. No incluye WMS, cerveza, participación de socios ni pagos por fuera de esas hojas.</p></div>';
   h+='<div><div class="tit"><h2>Caja</h2><span>Lo que debía haber y lo contado</span></div><div class="liq">'+
-    fila("Quedó en máquinas",r.resultado)+fila("Pagos con la caja, incluye reponer base",-(r.gastos+r.base))+fila("Debía quedar",r.esperado,"fuerte")+fila("Efectivo contado",r.efectivo)+
+    fila("Utilidad bruta",r.resultado)+fila("Pagos con la caja, incluye reponer base",-(r.gastos+r.base))+fila("Debía quedar",r.esperado,"fuerte")+fila("Efectivo contado",r.efectivo)+
     '<div class="fuerte"><span>'+(r.diferencia>0?"Falta":"Sobra")+'</span><span class="v '+(r.diferencia>0?"neg":"")+'">'+cop(Math.abs(r.diferencia))+'</span></div></div></div></section>';
-  h+='<section><div class="tit"><h2>Resultado por día</h2><span>Toca una barra para ver el valor</span></div>'+columnas(Array.from({length:r.dias_mes},function(_,i){var n=i+1,d=m.dias.filter(function(x){return x.dia===n})[0];return {valor:d?d.resultado:null,etiqueta:fechaTxt(m,n),eje:(n===1||n%5===0)?String(n):"",tip:d?"<b>"+fechaTxt(m,n)+"</b>Entró "+cop(d.entradas)+"<br>Salió "+cop(d.salidas)+"<br>Quedó "+cop(d.resultado):""}}))+'</section>';
-  if(m.ajustes.length){
-    var porFecha={};m.ajustes.forEach(function(a){(porFecha[a.fecha]=porFecha[a.fecha]||[]).push(a)});
-    h+='<section><div class="tit"><h2>Ajustes hechos a mano en las salidas</h2><span>'+cop(r.ajustes)+' en total</span></div><p class="nota" style="margin-bottom:8px">Estos días el total de salidas se digitó a mano y es menor a lo que marcó el contador. La diferencia no resta en la liquidación.</p><div class="tabla"><table><thead><tr><th>Fecha</th><th class="iz">Máquina</th><th>Marcó el contador</th><th>Se registró</th><th>Quedó por fuera</th></tr></thead><tbody>'+
-      m.ajustes.map(function(a){return '<tr><td>'+esc(a.fecha.slice(8)+"/"+a.fecha.slice(5,7))+'</td><td class="iz">#'+esc(a.maquina)+" "+esc(NOM(a.maquina))+'</td><td>'+cop(a.contador)+'</td><td>'+cop(a.registrado)+'</td><td>'+cop(a.valor)+'</td></tr>'}).join("")+'</tbody></table></div></section>';
-  }
+  h+='<section><div class="tit"><h2>Resultado por día</h2><span>Toca una barra para ver el valor</span></div>'+columnas(Array.from({length:r.dias_mes},function(_,i){var n=i+1,d=m.dias.filter(function(x){return x.dia===n})[0];return {valor:d?d.resultado:null,etiqueta:fechaTxt(m,n),eje:(n===1||n%5===0)?String(n):"",tip:d?"<b>"+fechaTxt(m,n)+"</b>Entró "+cop(d.entradas)+"<br>Salió "+cop(d.salidas)+"<br>Utilidad bruta "+cop(d.resultado):""}}))+'</section>';
+  h+=secVigilar(m);
   if(rev.length)h+='<section><div class="tit"><h2>Por revisar</h2></div>'+rev.map(aviso).join("")+'</section>';
   if(inf.length)h+='<section><details><summary>Otras notas ('+inf.length+')</summary><div style="margin-top:8px">'+inf.map(aviso).join("")+'</div></details></section>';
-  h+='<section><div class="tit"><h2>Día por día</h2></div><div class="tabla"><table><thead><tr><th>Día</th><th>Vendido</th><th>Salió</th><th>Quedó</th><th>Gastos</th><th>Debía quedar</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody>'+
+  h+='<section><div class="tit"><h2>Día por día</h2></div><div class="tabla"><table><thead><tr><th>Día</th><th>Vendido</th><th>Salió</th><th>Bruta</th><th>Gastos</th><th>Debía quedar</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody>'+
     m.dias.map(function(d){var c=d.efectivo!==0,dif=d.efectivo-d.esperado,f=fechaDe(m,d.dia);return '<tr><td>'+SEM[f.getDay()].slice(0,3)+" "+d.dia+'</td><td>'+cop(d.entradas)+'</td><td>'+cop(d.salidas)+'</td><td class="'+sn(d.resultado)+'">'+cop(d.resultado)+'</td><td>'+cop(d.gastos)+'</td><td class="'+sn(d.esperado)+'">'+cop(d.esperado)+'</td><td>'+(c?cop(d.efectivo):"—")+'</td><td class="'+(c&&dif<0?"neg":"")+'">'+(c?(dif>0?"+":"")+cop(dif):"—")+'</td></tr>'}).join("")+'</tbody></table></div><p class="nota" style="margin-top:6px">Diferencia: más significa que sobró efectivo, menos que faltó. “—” es un día sin conteo.</p></section>';
   return h;
 }
 
 // ---------- MÁQUINAS
+function secVigilar(m,tope){
+  var l=m.vigilar||[];if(!l.length)return "";
+  var ver=tope?l.slice(0,tope):l,mesN=MESES[m.mes-1].toLowerCase();
+  return '<section><div class="tit"><h2>Máquinas a vigilar</h2><span>'+l.length+' en '+mesN+(tope&&l.length>tope?' · <button type="button" class="volver" data-tab="maquinas">Ver todas</button>':'')+'</span></div><div class="rank">'+ver.map(function(x){
+    return '<button type="button" class="fila aviso-maq" data-ver-maq="'+esc(x.id)+'" style="display:flex;gap:10px">'+ICO.rev+'<span style="flex:1;min-width:0"><span class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(x.resultado)+'">'+cop(x.resultado)+'</span></span><small style="display:block">'+x.motivos.map(esc).join(". ")+'.</small></span></button>';
+  }).join("")+'</div></section>';
+}
 function datosMaquinas(){
   var m=D.meses[S.mes];
   if(S.periodo==="dia"){var d=m.dias[m.dias.length-1].dia;return m.maquinas.map(function(x){var y=x.dias.filter(function(z){return z[0]===d})[0];return {id:x.id,entradas:y?y[1]:0,salidas:y?y[2]:0,resultado:y?y[3]:0}})}
-  if(S.periodo==="mes")return m.maquinas.map(function(x){return {id:x.id,entradas:x.entradas,salidas:x.salidas,resultado:x.resultado,dias:x.dias}});
+  if(S.periodo==="mes")return m.maquinas.map(function(x){return {id:x.id,entradas:x.entradas,salidas:x.salidas,resultado:x.resultado}});
   var a={};delAnio(S.anio).forEach(function(k){D.meses[k].maquinas.forEach(function(x){var t=a[x.id]=a[x.id]||{id:x.id,entradas:0,salidas:0,resultado:0};t.entradas+=x.entradas;t.salidas+=x.salidas;t.resultado+=x.resultado})});
   return Object.keys(a).map(function(k){return a[k]});
 }
-function vMaquinas(){
-  var m=D.meses[S.mes],ls=datosMaquinas().sort(function(a,b){return b.resultado-a.resultado});
-  var hi=Math.max(0,ls[0].resultado),lo=Math.min(0,ls[ls.length-1].resultado),tot=(hi-lo)||1,z=-lo/tot*100;
-  var etiq={dia:"Último día ("+m.dias[m.dias.length-1].dia+" de "+MESES[m.mes-1].toLowerCase()+")",mes:MESES[m.mes-1]+" "+m.anio,anio:"Año "+S.anio};
-  var h='<section><div class="tit"><div class="segm" role="group" aria-label="Período">'+[["dia","Último día"],["mes","Mes"],["anio","Año"]].map(function(p){return '<button type="button" data-periodo="'+p[0]+'" aria-pressed="'+(S.periodo===p[0])+'">'+p[1]+'</button>'}).join("")+'</div><span>'+esc(etiq[S.periodo])+'</span></div>';
-  var bajas=ls.slice(-5).reverse();
-  h+='<div class="tit" style="margin-top:14px"><h2>Las de menor rendimiento</h2></div><div class="rank">'+bajas.map(function(x){return '<div class="fila"><div class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(x.resultado)+'">'+cop(x.resultado)+'</span></div><small>Vendió '+cop(x.entradas)+(x.entradas?' · Retiene '+pct(x.resultado/x.entradas):'')+'</small></div>'}).join("")+'</div></section>';
-  h+='<section><div class="tit"><h2>Todas las máquinas</h2><span>De mayor a menor. Toca una para ver su detalle.</span></div><div class="rank">';
-  ls.forEach(function(x){
-    var w=Math.abs(x.resultado)/tot*100,pos=x.resultado>=0?'left:'+z+'%':'left:'+(z-w)+'%',ab=S.abierta===x.id;
-    h+='<div><button type="button" class="fila" data-maq="'+esc(x.id)+'" aria-expanded="'+ab+'"><div class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(x.resultado)+'">'+cop(x.resultado)+'</span></div><div class="pista"><span class="cero" style="left:'+z+'%"></span><span class="bar '+(x.resultado>=0?"up":"dn")+'" style="'+pos+';width:'+w+'%"></span></div><small>Entró '+cop(x.entradas)+' · Salió '+cop(x.salidas)+(x.entradas?' · Retiene '+pct(x.resultado/x.entradas):'')+'</small></button>';
-    if(ab){
-      var meses=delAnio(S.anio).map(function(k){var y=D.meses[k].maquinas.filter(function(q){return q.id===x.id})[0],n=MESES[+k.slice(5)-1];return {valor:y?y.resultado:null,etiqueta:n,eje:n.slice(0,1),tip:"<b>"+n+"</b>"+cop(y?y.resultado:0)}});
-      var serie=(m.maquinas.filter(function(q){return q.id===x.id})[0]||{dias:[]}).dias;
-      h+='<div class="detalle dos"><div><div class="etq" style="margin-bottom:8px">Por día en '+MESES[m.mes-1].toLowerCase()+'</div>'+columnas(serie.map(function(y){return {valor:y[3],etiqueta:"Día "+y[0],eje:(y[0]===1||y[0]%5===0)?String(y[0]):"",tip:"<b>Día "+y[0]+"</b>Entró "+cop(y[1])+"<br>Salió "+cop(y[2])+"<br>Quedó "+cop(y[3])}}))+'</div><div><div class="etq" style="margin-bottom:8px">Por mes en '+S.anio+'</div>'+columnas(meses)+'</div></div>';
-    }
-    h+='</div>';
+function ordenId(a,b){var ma=a[0]==="M",mb=b[0]==="M";if(ma!==mb)return ma?1:-1;return parseInt(a.replace("M",""),10)-parseInt(b.replace("M",""),10)}
+function etiquetaPeriodo(){var m=D.meses[S.mes];return {dia:"Último día ("+m.dias[m.dias.length-1].dia+" de "+MESES[m.mes-1].toLowerCase()+")",mes:MESES[m.mes-1]+" "+m.anio,anio:"Año "+S.anio}[S.periodo]}
+function filtrosMaq(){
+  var ids=Object.keys(D.nombres).concat(D.meses[ult].maquinas.map(function(x){return x.id})).filter(function(x,i,a){return a.indexOf(x)===i}).sort(ordenId);
+  return '<div class="filtros"><div class="segm" role="group" aria-label="Período">'+[["dia","Último día"],["mes","Mes"],["anio","Año"]].map(function(p){return '<button type="button" data-periodo="'+p[0]+'" aria-pressed="'+(S.periodo===p[0])+'">'+p[1]+'</button>'}).join("")+'</div><select id="sel-maq" aria-label="Filtrar por máquina"><option value="">Todas las máquinas</option>'+ids.map(function(i){return '<option value="'+esc(i)+'"'+(S.abierta===i?" selected":"")+'>#'+esc(i)+" "+esc(NOM(i))+'</option>'}).join("")+'</select></div>';
+}
+function segMetrica(){return '<div class="segm" role="group" aria-label="Comparar por">'+[["venta","Venta"],["deja","Lo que deja"]].map(function(p){return '<button type="button" data-metrica="'+p[0]+'" aria-pressed="'+(S.metrica===p[0])+'">'+p[1]+'</button>'}).join("")+'</div>'}
+function valorM(x){return S.metrica==="venta"?x.entradas:x.resultado}
+function promedio(l){return l.length?l.reduce(function(a,x){return a+valorM(x)},0)/l.length:0}
+function frentePromedio(ls){
+  var pr=promedio(ls),o=ls.slice().sort(function(a,b){return valorM(b)-valorM(a)});
+  var difs=o.map(function(x){return valorM(x)-pr}),hi=Math.max(0,Math.max.apply(null,difs)),lo=Math.min(0,Math.min.apply(null,difs)),tot=(hi-lo)||1,z=-lo/tot*100;
+  var arriba=o.filter(function(x){return valorM(x)>=pr}).length,nomb=S.metrica==="venta"?"Vendió":"Dejó";
+  var h='<section><div class="tit"><h2>Frente al promedio</h2>'+segMetrica()+'</div><div class="fila-cifras" style="margin-bottom:6px">'+cifra("Promedio por máquina",cop(pr),etiquetaPeriodo())+cifra("Por encima",arriba+" máquinas")+cifra("Por debajo",(o.length-arriba)+" máquinas")+'</div><div class="rank frente">';
+  o.forEach(function(x){
+    var d=valorM(x)-pr,w=Math.abs(d)/tot*100,pos=d>=0?'left:'+z+'%':'left:'+(z-w)+'%',rel=pr?d/Math.abs(pr):0;
+    h+='<button type="button" class="fila" data-ver-maq="'+esc(x.id)+'"><div class="l"><span class="n"><i>#'+esc(x.id)+'</i>'+esc(NOM(x.id))+'</span><span class="v '+sn(valorM(x))+'">'+cop(valorM(x))+'</span></div><div class="pista"><span class="cero" style="left:'+z+'%"></span><span class="bar '+(d>=0?"up":"dn")+'" style="'+pos+';width:'+w+'%"></span></div><small>'+(d>=0?"▲ ":"▼ ")+(d>=0?"+":"−")+pct(Math.abs(rel))+" frente al promedio"+(x.entradas?" · Retiene "+pct(x.resultado/x.entradas):"")+'</small></button>';
   });
-  return h+'</div></section>';
+  return h+'</div><div class="clave"><span><i style="background:var(--dato)"></i>Por encima del promedio</span><span><i style="background:var(--contra)"></i>Por debajo del promedio</span></div></section>';
+}
+function clasePct(v){if(v>=.7)return "c-3";if(v>=.35)return "c-2";if(v>=.1)return "c-1";if(v>-.1)return "c0";if(v>-.35)return "c1";if(v>-.7)return "c2";return "c3"}
+function mesAMes(){
+  var ks=delAnio(S.anio),ids={},tabla={};
+  ks.forEach(function(k){var ml=D.meses[k].maquinas,pr=promedio(ml);ml.forEach(function(x){ids[x.id]=1;(tabla[x.id]=tabla[x.id]||{})[k]=pr?(valorM(x)-pr)/Math.abs(pr):0})});
+  var ultimo=ks[ks.length-1],orden=Object.keys(ids).sort(function(a,b){return (tabla[b][ultimo]||0)-(tabla[a][ultimo]||0)});
+  var h='<section><div class="tit"><h2>Mes a mes frente al promedio</h2><span>'+(S.metrica==="venta"?"Venta":"Lo que deja")+', % por encima o por debajo. Ordenado por el último mes.</span></div><div class="tabla"><table class="calor"><thead><tr><th>Máquina</th>'+ks.map(function(k){var m=D.meses[k],parcial=m.dias[m.dias.length-1].dia<m.resumen.dias_mes;return '<th>'+MESES[+k.slice(5)-1].slice(0,3)+(parcial?"*":"")+'</th>'}).join("")+'</tr></thead><tbody>';
+  orden.forEach(function(i){h+='<tr data-maq="'+esc(i)+'"><td>#'+esc(i)+" "+esc(NOM(i))+'</td>'+ks.map(function(k){var v=tabla[i][k];if(v==null)return '<td>—</td>';var t=Math.round(v*100);return '<td class="'+clasePct(v)+'">'+(t>0?"+":t<0?"−":"")+Math.abs(t)+'</td>'}).join("")+'</tr>'});
+  return h+'</tbody></table></div><div class="clave"><span><i class="c-3"></i>+70 % o más</span><span><i class="c-1"></i>+10 %</span><span><i class="c0"></i>En el promedio</span><span><i class="c1"></i>−10 %</span><span><i class="c3"></i>−70 % o menos</span><span>* Mes en curso</span></div></section>';
+}
+function vMaquina(id){
+  var m=D.meses[S.mes],ls=datosMaquinas(),x=ls.filter(function(q){return q.id===id})[0];
+  var h='<section>'+filtrosMaq()+'</section><section><p><button type="button" class="volver" data-limpiar-maq>← Todas las máquinas</button></p><div class="hoy-cab" style="margin-top:6px"><h1>#'+esc(id)+" "+esc(NOM(id))+'</h1><span>'+esc(etiquetaPeriodo())+'</span></div>';
+  if(!x)return h+'<p class="nota">Esta máquina no tiene lecturas en este período.</p></section>';
+  var o=ls.slice().sort(function(a,b){return b.resultado-a.resultado}),puesto=o.findIndex(function(q){return q.id===id})+1;
+  var S0=S.metrica;S.metrica="venta";var prV=promedio(ls);S.metrica="deja";var prD=promedio(ls);S.metrica=S0;
+  var casaE=ls.reduce(function(a,q){return a+q.entradas},0),casaR=ls.reduce(function(a,q){return a+q.resultado},0);
+  h+='<div class="fila-cifras">'+cifra("Vendió",cop(x.entradas),prV?(x.entradas>=prV?"▲ +":"▼ −")+pct(Math.abs(x.entradas-prV)/prV)+" frente al promedio":"")+cifra("Salió",cop(x.salidas))+cifra("Dejó",cop(x.resultado),"Puesto "+puesto+" de "+o.length,sn(x.resultado))+cifra("Retiene",x.entradas?pct(x.resultado/x.entradas):"—",casaE?"La casa "+pct(casaR/casaE):"")+'</div></section>';
+  var v=(m.vigilar||[]).filter(function(q){return q.id===id})[0];
+  if(v)h+='<section><div class="estado">'+ICO.rev+'<div><b>A vigilar</b><span>'+v.motivos.map(esc).join(". ")+'.</span></div></div></section>';
+  var serie=(m.maquinas.filter(function(q){return q.id===id})[0]||{dias:[]}).dias;
+  h+='<section class="dos"><div><div class="tit"><h2>Por día</h2><span>'+MESES[m.mes-1]+'</span></div>'+columnas(Array.from({length:m.resumen.dias_mes},function(_,i){var n=i+1,y=serie.filter(function(q){return q[0]===n})[0];return {valor:y?y[3]:null,etiqueta:"Día "+n,eje:(n===1||n%5===0)?String(n):"",tip:y?"<b>Día "+n+"</b>Entró "+cop(y[1])+"<br>Salió "+cop(y[2])+"<br>Dejó "+cop(y[3]):""}}))+'</div>';
+  var ks=delAnio(S.anio);
+  h+='<div><div class="tit"><h2>Por mes</h2><span>'+S.anio+'</span></div>'+columnas(MESES.map(function(n,i){var k=S.anio+"-"+String(i+1).padStart(2,"0"),mm=D.meses[k],y=mm?mm.maquinas.filter(function(q){return q.id===id})[0]:null;return {valor:y?y.resultado:null,etiqueta:n,eje:n.slice(0,1),tip:y?"<b>"+n+"</b>Dejó "+cop(y.resultado):""}}))+'</div></section>';
+  h+='<section><div class="tit"><h2>Mes a mes</h2><span>Venta por día frente al promedio de las máquinas</span></div><div class="tabla"><table><thead><tr><th>Mes</th><th>Venta por día</th><th>Promedio</th><th>Frente al promedio</th><th>Dejó</th><th>Retiene</th><th>La casa</th></tr></thead><tbody>'+ks.map(function(k){
+    var mm=D.meses[k],y=mm.maquinas.filter(function(q){return q.id===id})[0],n=MESES[+k.slice(5)-1],dd=Math.max(mm.resumen.dias,1);
+    if(!y)return '<tr><td>'+n+'</td><td colspan="6" class="iz">Sin lecturas</td></tr>';
+    var pr=mm.maquinas.reduce(function(a,q){return a+q.entradas},0)/mm.maquinas.length/dd,vd=y.entradas/dd,rel=pr?(vd-pr)/pr:0;
+    return '<tr><td>'+n+'</td><td>'+cop(vd)+'</td><td>'+cop(pr)+'</td><td class="'+clasePct(rel)+'">'+(rel>=0?"+":"−")+pct(Math.abs(rel))+'</td><td class="'+sn(y.resultado)+'">'+cop(y.resultado)+'</td><td>'+(y.entradas?pct(y.resultado/y.entradas):"—")+'</td><td>'+pct(mm.resumen.resultado/mm.resumen.entradas)+'</td></tr>';
+  }).join("")+'</tbody></table></div></section>';
+  return h;
+}
+function vMaquinas(){
+  if(S.abierta)return vMaquina(S.abierta);
+  var m=D.meses[S.mes],ls=datosMaquinas(),con=ls.filter(function(x){return x.entradas>0});
+  var porRet=con.slice().sort(function(a,b){return a.resultado/a.entradas-b.resultado/b.entradas})[0],porRes=ls.slice().sort(function(a,b){return b.resultado-a.resultado});
+  var h='<section>'+filtrosMaq()+'<div class="fila-cifras" style="margin-top:12px">'+cifra("La que más dejó",cop(porRes[0].resultado),"#"+porRes[0].id+" "+NOM(porRes[0].id))+cifra("La que menos dejó",cop(porRes[porRes.length-1].resultado),"#"+porRes[porRes.length-1].id+" "+NOM(porRes[porRes.length-1].id),sn(porRes[porRes.length-1].resultado))+(porRet?cifra("Menor retención",pct(porRet.resultado/porRet.entradas),"#"+porRet.id+" "+NOM(porRet.id)):"")+'</div></section>';
+  h+=secVigilar(m)+frentePromedio(ls)+mesAMes();
+  return h;
 }
 
 // ---------- GASTOS
@@ -378,11 +436,11 @@ function vAnio(){
   var compl=ms.filter(function(m){return m.dias[m.dias.length-1].dia===m.resumen.dias_mes});
   var h='';
   (D.errores||[]).forEach(function(e){h+='<div class="estado">'+ICO.rev+'<div><b>No pude leer '+esc(e.archivo)+'</b><span>'+esc(e.motivo)+'</span></div></div>'});
-  h+='<section><div class="tit"><h2 style="font-size:24px">'+a+' hasta hoy</h2><span>'+ks.length+' meses con datos</span></div><div class="fila-cifras">'+cifra("Vendido",cop(suma("entradas")))+cifra("Quedó en máquinas",cop(suma("resultado")))+cifra("Gastos",cop(suma("gastos")))+cifra("Utilidad antes de otros descuentos",cop(suma("utilidad")),compl.length?"Promedio por mes completo: "+cop(compl.reduce(function(x,m){return x+m.resumen.utilidad},0)/compl.length):"",sn(suma("utilidad")))+'</div></section>';
-  h+='<section><div class="tit"><h2>Utilidad por mes</h2><span>Toca un mes para abrirlo</span></div>'+columnas(MESES.map(function(n,i){var k=a+"-"+String(i+1).padStart(2,"0"),m=D.meses[k];return {valor:m?m.resumen.utilidad:null,etiqueta:n,eje:n.slice(0,1),ir:m?k:null,tip:"<b>"+n+"</b>Utilidad "+cop(m?m.resumen.utilidad:0)+(m&&m.dias[m.dias.length-1].dia<m.resumen.dias_mes?"<br>Mes en curso":"")}}))+'</section>';
+  h+='<section><div class="tit"><h2 style="font-size:24px">'+a+' hasta hoy</h2><span>'+ks.length+' meses con datos</span></div><div class="fila-cifras">'+cifra("Vendido",cop(suma("entradas")))+cifra("Utilidad bruta",cop(suma("utilidad_bruta")))+cifra("Gastos",cop(suma("gastos")))+cifra("Utilidad real",cop(suma("utilidad_real")),compl.length?"Promedio por mes completo: "+cop(compl.reduce(function(x,m){return x+m.resumen.utilidad_real},0)/compl.length):"",sn(suma("utilidad_real")))+'</div></section>';
+  h+='<section><div class="tit"><h2>Utilidad bruta y real por mes</h2><span>Toca un mes para abrirlo</span></div>'+columnas(MESES.map(function(n,i){var k=a+"-"+String(i+1).padStart(2,"0"),m=D.meses[k];return {valor:m?m.resumen.utilidad_real:null,fondo:m?m.resumen.utilidad_bruta:null,etiqueta:n,eje:n.slice(0,1),ir:m?k:null,tip:m?"<b>"+n+"</b>Bruta "+cop(m.resumen.utilidad_bruta)+"<br>Gastos "+cop(m.resumen.gastos)+"<br>Real "+cop(m.resumen.utilidad_real)+(m.dias[m.dias.length-1].dia<m.resumen.dias_mes?"<br>Mes en curso":""):""}}),{clave:'<div class="clave"><span><i style="background:var(--gris-serie)"></i>Utilidad bruta</span><span><i style="background:var(--dato)"></i>Utilidad real</span></div>'})+'</section>';
   function col(n,f,cl,neg){return '<tr class="'+(cl||"")+'"><td>'+n+'</td>'+ms.map(function(m){var v=neg?-m.resumen[f]:m.resumen[f];return '<td class="'+sn(v)+'">'+cop(v)+'</td>'}).join("")+'<td class="'+sn(neg?-suma(f):suma(f))+'"><b>'+cop(neg?-suma(f):suma(f))+'</b></td></tr>'}
   h+='<section><div class="tit"><h2>Estado de resultados</h2><span>'+a+'</span></div><div class="tabla"><table><thead><tr><th>Concepto</th>'+ms.map(function(m){return '<th>'+MESES[m.mes-1].slice(0,3)+'</th>'}).join("")+'<th>Total</th></tr></thead><tbody>'+
-    col("Entradas","entradas")+col("Salidas","salidas","",true)+col("Quedó en máquinas","resultado","t")+col("Gastos","gastos","",true)+col("Utilidad","utilidad","t")+col("Ajustes a mano en salidas","ajustes")+col("Diferencia de caja (+ falta)","diferencia")+'</tbody></table></div></section>';
+    col("Entradas","entradas")+col("Salidas","salidas","",true)+col("Utilidad bruta","utilidad_bruta","t")+col("Gastos del mes","gastos","",true)+col("Utilidad real","utilidad_real","t")+col("Diferencia de caja (+ falta)","diferencia")+'</tbody></table></div></section>';
   var cats={};ms.forEach(function(m){var g=gastosCat(m);Object.keys(g).forEach(function(k){cats[k]=(cats[k]||0)+g[k]})});
   var orden=Object.keys(cats).filter(function(k){return k!=="Reposición de base"}).sort(function(x,y){return cats[y]-cats[x]});
   h+='<section><div class="tit"><h2>Gastos por categoría</h2><span>'+a+'</span></div><div class="tabla"><table><thead><tr><th>Categoría</th>'+ms.map(function(m){return '<th>'+MESES[m.mes-1].slice(0,3)+'</th>'}).join("")+'<th>Total</th></tr></thead><tbody>'+
@@ -407,8 +465,10 @@ document.addEventListener("click",function(e){
   if(t=c("[data-tab]")){S.tab=t.getAttribute("data-tab");try{history.replaceState(null,"","#"+S.tab)}catch(x){}pintar();scrollTo(0,0);return}
   if(t=c("[data-ir-tab]")){S.tab=t.getAttribute("data-ir-tab");S.mes=ult;pintar();scrollTo(0,0);return}
   if(t=c("[data-ir]")){S.mes=t.getAttribute("data-ir");S.tab="mes";pintar();scrollTo(0,0);return}
-  if(t=c("[data-periodo]")){S.periodo=t.getAttribute("data-periodo");S.abierta=null;pintar();return}
-  if(t=c("[data-maq]")){var q=t.getAttribute("data-maq");S.abierta=S.abierta===q?null:q;pintar();return}
+  if(t=c("[data-periodo]")){S.periodo=t.getAttribute("data-periodo");pintar();return}
+  if(t=c("[data-ver-maq]")||c("[data-maq]")){S.abierta=t.getAttribute("data-ver-maq")||t.getAttribute("data-maq");S.tab="maquinas";pintar();scrollTo(0,0);return}
+  if(t=c("[data-limpiar-maq]")){S.abierta=null;pintar();scrollTo(0,0);return}
+  if(t=c("[data-metrica]")){S.metrica=t.getAttribute("data-metrica");pintar();return}
   if(t=c("[data-cat]")){var w=t.getAttribute("data-cat");S.cat=S.cat===w?null:w;pintar();return}
   if(t=c("[data-tip]")){var r=t.getBoundingClientRect();mostrar(t,r.left+r.width/2,Math.max(r.top+30,e.clientY));return}
   tip.hidden=true;
@@ -418,7 +478,8 @@ document.addEventListener("keydown",function(e){if(e.key==="Escape")tip.hidden=t
 addEventListener("scroll",function(){tip.hidden=true},{passive:true});
 var ancho=innerWidth;addEventListener("resize",function(){if(innerWidth!==ancho){ancho=innerWidth;pintar()}});
 sa.addEventListener("change",function(){S.anio=+sa.value;var k=delAnio(S.anio);S.mes=k[k.length-1];pintar()});
-sm.addEventListener("change",function(){S.mes=sm.value;S.abierta=null;S.cat=null;pintar()});
+sm.addEventListener("change",function(){S.mes=sm.value;S.cat=null;pintar()});
+document.addEventListener("change",function(e){if(e.target.id==="sel-maq"){S.abierta=e.target.value||null;pintar()}});
 pintar();
 }
 })();

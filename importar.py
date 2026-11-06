@@ -29,7 +29,10 @@ ANIOS = [int(a) for a in os.environ.get("ANIOS", "2026").split(",")]
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
          "septiembre", "octubre", "noviembre", "diciembre"]
 TOL = 0.5
-AJUSTE_ATIPICO = 10_000_000
+RETENCION_MINIMA = 10
+RETENCION_BAJA_SEGUIDA = 15
+CAIDA_MINIMA = 0.40
+DIAS_MINIMOS_MES_EN_CURSO = 3
 ITERACIONES_CLAVE = 600_000
 
 # Palabras de cada categoría. Gana la primera que coincida, por eso el orden importa.
@@ -241,10 +244,10 @@ def leer_mes(archivo):
             if not isinstance(ws.cell(r, c["in_ant"]).value, (int, float)):
                 continue
             m = id_maquina(ws.cell(r, 1).value) or id_sin_numero(filas, ws.cell(r + 1, 1).value)
-            crudo_in, crudo_out = wf.cell(r, c["tot_in"]).value, wf.cell(r, c["tot_out"]).value
+            crudo_in = wf.cell(r, c["tot_in"]).value
             k = multiplicador(crudo_in) if isinstance(crudo_in, str) else None
             filas.append(dict(
-                m=m, nombre=nombre_valido(ws.cell(r, 2).value), k=k, crudo_out=crudo_out,
+                m=m, nombre=nombre_valido(ws.cell(r, 2).value), k=k,
                 leido=isinstance(ws.cell(r, c["in_act"]).value, (int, float)),
                 in_ant=num(ws.cell(r, c["in_ant"]).value), in_act=num(ws.cell(r, c["in_act"]).value),
                 out_ant=num(ws.cell(r, c["out_ant"]).value), out_act=num(ws.cell(r, c["out_act"]).value),
@@ -279,7 +282,7 @@ def construir(meses):
 def analizar_mes(mes, kmapa, nombre, previo):
     anio, nmes = mes["anio"], mes["mes"]
     alertas = []
-    dias_out, gastos_out, ajustes = [], [], []
+    dias_out, gastos_out = [], []
     por_maquina = collections.defaultdict(lambda: dict(entradas=0, salidas=0, resultado=0, serie={}))
     saltos, difs_yield, gastos_descuadrados, pies_distintos = [], [], [], []
 
@@ -288,7 +291,7 @@ def analizar_mes(mes, kmapa, nombre, previo):
 
     for d in mes["dias"]:
         fecha = f"{anio}-{nmes:02d}-{d['dia']:02d}"
-        entradas = salidas = resultado = ajuste_dia = 0
+        entradas = salidas = resultado = 0
         actual = collections.defaultdict(list)
         for x in d["filas"]:
             m = x["m"]
@@ -307,12 +310,6 @@ def analizar_mes(mes, kmapa, nombre, previo):
             actual[m].append(x)
             if abs(x["total"] - x["resultado"]) > TOL:
                 difs_yield.append((fecha, m, x["total"] - x["resultado"]))
-            digitado = isinstance(x["crudo_out"], (int, float))
-            contador = (x["out_act"] - x["out_ant"]) * k
-            if digitado and abs(contador - x["salidas"]) > TOL:
-                dif = contador - x["salidas"]
-                ajuste_dia += dif
-                ajustes.append(dict(fecha=fecha, maquina=m, contador=contador, registrado=x["salidas"], valor=dif))
             if m in previo and (x["in_ant"] or x["out_ant"]):
                 if not any(p["in_act"] == x["in_ant"] and p["out_act"] == x["out_ant"] for p in previo[m]):
                     p = previo[m][-1]
@@ -335,7 +332,7 @@ def analizar_mes(mes, kmapa, nombre, previo):
         efectivo = num(pie.get("efectivo"))
         esperado = num(pie.get("total")) if "total" in pie else resultado - gastado
         dias_out.append(dict(dia=d["dia"], hoja=d["hoja"], entradas=entradas, salidas=salidas, resultado=resultado,
-                             gastos=gastado, esperado=esperado, efectivo=efectivo, ajustes=ajuste_dia))
+                             gastos=gastado, esperado=esperado, efectivo=efectivo))
 
     # Días faltantes dentro del tramo ya digitado
     hechos = {d["dia"] for d in dias_out}
@@ -365,13 +362,6 @@ def analizar_mes(mes, kmapa, nombre, previo):
         alertas.append(dict(nivel="revisar", titulo=f"{'Falta' if brecha > 0 else 'Sobra'} efectivo: {cop(abs(brecha))}",
                             detalle=f"Según las hojas debían quedar {cop(esperado)} y se contaron {cop(tot_efe)}."))
 
-    # Valores digitados a mano
-    tot_ajustes = sum(a["valor"] for a in ajustes)
-    for a in ajustes:
-        if abs(a["valor"]) >= AJUSTE_ATIPICO:
-            alertas.append(dict(nivel="revisar", titulo=f"{etiqueta(a['maquina'])}: ajuste muy alto el {a['fecha'][8:]}",
-                                detalle=f"El contador OUT subió {cop(a['contador'])} y se registraron {cop(a['registrado'])}: quedaron fuera {cop(a['valor'])}. Puede ser un borrado de la máquina o un error de digitación."))
-
     if difs_yield:
         total = sum(x[2] for x in difs_yield)
         muestra = "; ".join(f"{x[0][8:]} máq. {x[1]} ({cop(x[2])})" for x in sorted(difs_yield, key=lambda z: -abs(z[2]))[:6])
@@ -381,7 +371,7 @@ def analizar_mes(mes, kmapa, nombre, previo):
     if saltos:
         e, s_ = sum(x[2] for x in saltos), sum(x[3] for x in saltos)
         fechas = sorted({x[0][8:] for x in saltos})
-        alertas.append(dict(nivel="revisar" if abs(e - s_) >= 100_000 else "info",
+        alertas.append(dict(nivel="revisar" if e >= 100_000 else "info",
                             titulo=f"{len(saltos)} lecturas no continúan las del día anterior",
                             detalle=f"Días {', '.join(fechas)}. Entre un día y otro el contador avanzó sin quedar en ningún total: {cop(e)} de entradas y {cop(s_)} de salidas. Las máquinas borradas no suman aquí. " +
                                     "; ".join(f"máq. {x[1]} ({cop(x[2] - x[3])})" for x in sorted(saltos, key=lambda z: -abs(z[2] - z[3]))[:6]) + "."))
@@ -400,12 +390,74 @@ def analizar_mes(mes, kmapa, nombre, previo):
     maquinas.sort(key=lambda x: -x["resultado"])
     alertas.sort(key=lambda a: 0 if a["nivel"] == "revisar" else 1)
     return dict(anio=anio, mes=nmes, archivo=mes["archivo"], modificado=mes["modificado"], dias=dias_out,
-                gastos=gastos_out, ajustes=ajustes, maquinas=maquinas, alertas=alertas,
+                gastos=gastos_out, maquinas=maquinas, alertas=alertas,
                 resumen=dict(entradas=sum(d["entradas"] for d in dias_out), salidas=sum(d["salidas"] for d in dias_out),
                              resultado=tot_res, gastos=tot_gas - pagos_base, base=pagos_base, efectivo=tot_efe,
-                             esperado=esperado, diferencia=brecha, ajustes=tot_ajustes, sin_contar=sum(x[2] - x[3] for x in saltos),
-                             utilidad=tot_res - (tot_gas - pagos_base), dias=len(dias_out),
+                             esperado=esperado, diferencia=brecha, sin_contar=sum(x[2] - x[3] for x in saltos),
+                             utilidad_bruta=tot_res, utilidad_real=tot_res - (tot_gas - pagos_base), dias=len(dias_out),
                              dias_mes=calendar.monthrange(anio, nmes)[1]))
+
+
+def vigilancia(meses, nombre):
+    """Por cada mes, las máquinas que no retienen o que vienen mal, con los motivos en palabras."""
+    claves = sorted(meses)
+
+    def ret(x):
+        return x["resultado"] / x["entradas"] * 100 if x["entradas"] else None
+
+    def completo(m):
+        return bool(m["dias"]) and m["dias"][-1]["dia"] == m["resumen"]["dias_mes"]
+
+    def nom_mes(k):
+        return MESES[int(k[5:]) - 1]
+
+    for i, k in enumerate(claves):
+        m = meses[k]
+        casa = m["resumen"]["resultado"] / m["resumen"]["entradas"] * 100 if m["resumen"]["entradas"] else 0
+        cerrados = [c for c in claves[:i + 1] if completo(meses[c])]
+        lista = []
+        for x in m["maquinas"]:
+            motivos = []
+            r = ret(x)
+            if completo(m):
+                if r is not None and r < RETENCION_MINIMA:
+                    motivos.append(f"Retuvo {r:.0f} % en {nom_mes(k)}, la casa {casa:.0f} %")
+            elif m["resumen"]["dias"] >= DIAS_MINIMOS_MES_EN_CURSO and x["resultado"] < 0:
+                motivos.append(f"Va en pérdida este mes: {cop(x['resultado'])}")
+
+            serie = []
+            for c in cerrados:
+                y = next((q for q in meses[c]["maquinas"] if q["id"] == x["id"]), None)
+                if y:
+                    serie.append((c, y))
+
+            negativos = 0
+            for c, y in reversed(serie):
+                if y["resultado"] >= 0:
+                    break
+                negativos += 1
+            if negativos >= 2:
+                desde = serie[-negativos][0]
+                total = sum(y["resultado"] for _, y in serie[-negativos:])
+                motivos.append(f"En pérdida {negativos} meses seguidos desde {nom_mes(desde)}: {cop(total)}")
+
+            bajos = 0
+            for c, y in reversed(serie):
+                v = ret(y)
+                if v is None or v >= RETENCION_BAJA_SEGUIDA:
+                    break
+                bajos += 1
+            if bajos >= 2 and negativos < 2:
+                motivos.append(f"Retiene menos de {RETENCION_BAJA_SEGUIDA} % hace {bajos} meses")
+
+            for campo, texto, formato in (("resultado", "Lo que deja", cop), ("entradas", "La venta", cop)):
+                u = [y[campo] for _, y in serie[-4:]]
+                if len(u) == 4 and u[0] > 0 and u[0] > u[1] > u[2] > u[3] and (u[0] - u[3]) / u[0] >= CAIDA_MINIMA:
+                    motivos.append(f"{texto} cae 3 meses seguidos: de {formato(u[0])} en {nom_mes(serie[-4][0])} a {formato(u[3])} en {nom_mes(serie[-1][0])}")
+            if motivos:
+                lista.append(dict(id=x["id"], motivos=motivos, resultado=x["resultado"], retencion=r))
+        lista.sort(key=lambda a: (-len(a["motivos"]), a["resultado"]))
+        m["vigilar"] = lista
 
 
 # ---------------------------------------------------------------- salida
@@ -439,9 +491,10 @@ def main():
             errores.append(dict(archivo=a["nombre"], motivo=str(e)[:200]))
 
     meses, nombres = construir(leidos)
+    vigilancia(meses, nombres)
     for clave, m in meses.items():
         r = m["resumen"]
-        print(f"{clave}  {m['archivo']:<34} días {r['dias']:>2}  resultado {cop(r['resultado']):>15}  gastos {cop(r['gastos']):>14}  utilidad {cop(r['utilidad']):>15}  ajustes {cop(r['ajustes']):>14}  alertas {len(m['alertas'])}")
+        print(f"{clave}  {m['archivo']:<34} días {r['dias']:>2}  resultado {cop(r['resultado']):>15}  gastos {cop(r['gastos']):>14}  real {cop(r['utilidad_real']):>15}  alertas {len(m['alertas'])}  a vigilar {len(m['vigilar'])}")
     for e in errores:
         print("ERROR", e)
 
