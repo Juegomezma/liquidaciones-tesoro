@@ -492,7 +492,8 @@ def main():
 
     meses, nombres = construir(leidos)
     vigilancia(meses, nombres)
-    for clave, m in meses.items():
+    # El registro de GitHub Actions es público: el detalle con cifras solo se imprime en el equipo local.
+    for clave, m in ({} if os.environ.get("GITHUB_ACTIONS") else meses).items():
         r = m["resumen"]
         print(f"{clave}  {m['archivo']:<34} días {r['dias']:>2}  resultado {cop(r['resultado']):>15}  gastos {cop(r['gastos']):>14}  real {cop(r['utilidad_real']):>15}  alertas {len(m['alertas'])}  a vigilar {len(m['vigilar'])}")
     for e in errores:
