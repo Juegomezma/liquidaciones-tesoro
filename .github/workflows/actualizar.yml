@@ -1,0 +1,45 @@
+name: Actualizar datos
+
+on:
+  schedule:
+    # Cada hora de 7 a. m. a 11 p. m. en Colombia (UTC-5)
+    - cron: "17 0-4,12-23 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Leer OneDrive y cifrar los datos
+        env:
+          TOKEN_KEY: ${{ secrets.TOKEN_KEY }}
+          DATOS_CLAVE: ${{ secrets.DATOS_CLAVE }}
+          ONEDRIVE_TOKEN_FILE: ${{ runner.temp }}/onedrive_token.json
+        run: |
+          python estado.py abrir
+          python importar.py
+          python estado.py guardar
+      - name: Publicar si algo cambió
+        run: |
+          git add docs/datos.enc.json estado/
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Actualizar datos"
+            git push
+          fi

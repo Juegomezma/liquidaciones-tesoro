@@ -1,0 +1,7 @@
+.cache/
+docs/datos.local.js
+__pycache__/
+*.xlsx
+*.xlsm
+*.xls
+.env
