@@ -2,8 +2,9 @@ name: Actualizar datos
 
 on:
   schedule:
-    # Cada hora de 7 a. m. a 11 p. m. en Colombia (UTC-5)
-    - cron: "17 0-4,12-23 * * *"
+    # Cada 30 minutos, todo el día. GitHub puede retrasar o saltarse ejecuciones programadas,
+    # por eso se pide seguido y en minutos poco congestionados.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 permissions:

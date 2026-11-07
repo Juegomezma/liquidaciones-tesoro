@@ -235,6 +235,13 @@ else fetch("datos.enc.json",{cache:"no-store"}).then(function(r){if(!r.ok)throw 
 
 // ---------- Tablero
 function iniciar(D){
+// Hora de la última revisión de OneDrive, leída de la información pública de GitHub (no contiene cifras).
+var REV="";
+function haceCuanto(t){var min=Math.round((Date.now()-t)/6e4);if(min<60)return "hace "+Math.max(min,1)+" min";if(min<1440)return "hace "+Math.round(min/60)+" h";return "el "+t.toLocaleDateString("es-CO",{day:"numeric",month:"short"})}
+if(/github\.io$/.test(location.hostname)){
+  fetch("https://api.github.com/repos/"+location.hostname.split(".")[0]+"/"+location.pathname.split("/")[1]+"/actions/workflows/actualizar.yml/runs?per_page=1&status=completed",{cache:"no-store"})
+    .then(function(r){return r.json()}).then(function(j){var t=j.workflow_runs&&j.workflow_runs[0];if(!t)return;REV="OneDrive revisado "+haceCuanto(new Date(t.updated_at));var el=document.getElementById("revisado");if(el)el.textContent=" · "+REV}).catch(function(){});
+}
 var claves=Object.keys(D.meses).sort();
 var ult=claves[claves.length-1];
 var anios=[];claves.forEach(function(k){var a=+k.slice(0,4);if(anios.indexOf(a)<0)anios.push(a)});
@@ -308,8 +315,9 @@ function vHoy(){
   claves.forEach(function(k){var x=D.meses[k];if(x.anio===semana.getFullYear()&&x.mes===semana.getMonth()+1)x.dias.forEach(function(y){if(y.dia===semana.getDate())compa=y})});
   var hoy=new Date(),atraso=Math.floor((new Date(hoy.getFullYear(),hoy.getMonth(),hoy.getDate())-f)/864e5);
   var mod=new Date(m.modificado);
-  var h='<section><div class="hoy-cab"><h1>'+esc(fechaTxt(m,d.dia).replace(/^./,function(c){return c.toUpperCase()}))+'</h1><span>Excel actualizado el '+mod.toLocaleDateString("es-CO",{day:"numeric",month:"short"})+', '+mod.toLocaleTimeString("es-CO",{hour:"numeric",minute:"2-digit"})+'</span></div>';
-  if(atraso>2)h+='<div class="estado" style="margin-bottom:12px">'+ICO.rev+'<div><b>Faltan días por digitar</b><span>La última hoja del Excel tiene '+atraso+' días de atraso.</span></div></div>';
+  var sig=new Date(f.getTime()+864e5);
+  var h='<section><div class="hoy-cab"><div><span class="etq">Último día digitado en el Excel</span><h1>'+esc(fechaTxt(m,d.dia).replace(/^./,function(c){return c.toUpperCase()}))+'</h1></div><span>Excel guardado el '+mod.toLocaleDateString("es-CO",{day:"numeric",month:"short"})+', '+mod.toLocaleTimeString("es-CO",{hour:"numeric",minute:"2-digit"})+'<span id="revisado">'+(REV?" · "+esc(REV):"")+'</span></span></div>';
+  if(atraso>=2)h+='<div class="estado" style="margin-bottom:12px">'+ICO.rev+'<div><b>El Excel aún no tiene la hoja del '+SEM[sig.getDay()]+' '+sig.getDate()+'</b><span>Cuando la guarden en OneDrive, aparece aquí en la siguiente revisión.</span></div></div>';
   var dif=d.efectivo?d.efectivo-d.esperado:null;
   h+='<div class="lectura"><div><span class="etq">Se vendió (entradas de las máquinas)</span>'+contador(d.entradas)+(compa?cambio(d.entradas,compa.entradas,"frente al "+SEM[semana.getDay()]+" anterior"):"")+'</div><div class="cifras">'+
     cifra("Salió en premios",cop(d.salidas),"Salidas registradas")+cifra("Utilidad bruta",cop(d.resultado),"Entradas menos salidas",sn(d.resultado))+
